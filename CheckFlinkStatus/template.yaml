@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  CheckFlinkStatus: Read Amazon Managed Flink application status, and send to SNS
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 30
+
+Parameters:
+  SNSTopicsARN:
+    Type: String
+    Description: SNS Topics ARN
+
+Resources:
+  CheckFlinkStatusFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: check_flink_status
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Architectures:
+        - x86_64
+      Policies:
+        - Statement:
+            - Sid: ManagedFlinkPolicy
+              Effect: Allow
+              Action:
+                - kinesisanalytics:ListApplications
+              Resource: '*'
+            - Sid: SNSPolicy
+              Effect: Allow
+              Action:
+                - sns:Publish
+              Resource:
+                - !Sub ${SNSTopicsARN}
+            - Sid: DynamoDBPolicy
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+              Resource:
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ManagedFlinkAppStatus
+      Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
+        Variables:
+          SNS_TOPICS_ARN: !Ref SNSTopicsARN
+      Events:
+        CheckFlinkStatus:
+          Type: Schedule
+          Properties:
+            Schedule: rate(10 minutes)
+            Name: CheckFlinkStatus
+            Description: Schedule to check Flink application status
+            Enabled: True
+            Input:
+              '{
+                "action": "check status"
+              }'
+  FlinkStatusTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: ManagedFlinkAppStatus
+      PrimaryKey: 
+        Name: ApplicationName
+        Type: String
+      Tags:
+        APP: ManagedFlinkAppStatus
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  CheckFlinkStatusFunction:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt CheckFlinkStatusFunction.Arn
+  CheckFlinkStatusFunctionIamRole:
+    Description: "Implicit IAM Role created for function"
+    Value: !GetAtt CheckFlinkStatusFunctionRole.Arn

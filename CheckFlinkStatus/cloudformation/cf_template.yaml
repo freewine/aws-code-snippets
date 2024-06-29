@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'CheckFlinkStatus: Read Amazon Managed Flink application status, and
+  send to SNS
+
+  '
+Globals:
+  Function:
+    Timeout: 30
+Parameters:
+  SNSTopicsARN:
+    Type: String
+    Description: SNS Topics ARN
+Resources:
+  CheckFlinkStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-xlebeibbm6nl/CheckFlinkStatus/a4ff1d1a4fe1d7c99dea253cedc306ed
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Architectures:
+      - x86_64
+      Policies:
+      - Statement:
+        - Sid: ManagedFlinkPolicy
+          Effect: Allow
+          Action:
+          - kinesisanalytics:ListApplications
+          Resource: '*'
+        - Sid: SNSPolicy
+          Effect: Allow
+          Action:
+          - sns:Publish
+          Resource:
+          - Fn::Sub: ${SNSTopicsARN}
+        - Sid: DynamoDBPolicy
+          Effect: Allow
+          Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          Resource:
+          - Fn::Sub: arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/ManagedFlinkAppStatus
+      Environment:
+        Variables:
+          SNS_TOPICS_ARN:
+            Ref: SNSTopicsARN
+      Events:
+        CheckFlinkStatus:
+          Type: Schedule
+          Properties:
+            Schedule: rate(10 minutes)
+            Name: CheckFlinkStatus
+            Description: Schedule to check Flink application status
+            Enabled: true
+            Input: '{ "action": "check status" }'
+    Metadata:
+      SamResourceId: CheckFlinkStatusFunction
+  FlinkStatusTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: ManagedFlinkAppStatus
+      PrimaryKey:
+        Name: ApplicationName
+        Type: String
+      Tags:
+        APP: ManagedFlinkAppStatus
+    Metadata:
+      SamResourceId: FlinkStatusTable
+Outputs:
+  CheckFlinkStatusFunction:
+    Description: Lambda Function ARN
+    Value:
+      Fn::GetAtt:
+      - CheckFlinkStatusFunction
+      - Arn
+  CheckFlinkStatusFunctionIamRole:
+    Description: Implicit IAM Role created for function
+    Value:
+      Fn::GetAtt:
+      - CheckFlinkStatusFunctionRole
+      - Arn
